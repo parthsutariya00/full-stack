@@ -3,11 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  // Pooled connection for the app (PgBouncer-friendly).
-  url       = env("DATABASE_URL")
-  // Unpooled connection for migrations; falls back to DATABASE_URL when unset.
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum TaskStatus {

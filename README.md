@@ -24,19 +24,69 @@ pnpm dev                      # http://localhost:3000
 
 Deploying: `pnpm db:deploy` runs pending migrations without prompting.
 
-### Pooled vs direct connections
+### Deploying to Railway
 
-Managed Postgres (Neon, Supabase) hands out a **pooled** host that PgBouncer fronts.
-That is right for the app but wrong for `prisma migrate`, which needs session-level
-access. So `.env` carries both, and `schema.prisma` points `directUrl` at the second:
+`railway.json` drives the deploy, so nothing needs configuring in the dashboard:
+
+| Phase | Command | Why |
+| ----- | ------- | --- |
+| Build | `pnpm build` | Runs `prisma generate` then `next build` |
+| Pre-deploy | `pnpm db:deploy` | Applies pending migrations before the new version serves traffic |
+| Start | `pnpm start` | `next start`, binding Railway's `$PORT` |
+
+The pre-deploy step runs in its own container inside Railway's network, so it reaches
+`postgres.railway.internal` without a public proxy. A failed migration aborts the deploy
+and leaves the previous version running.
+
+The app service needs one variable, referencing the database service:
+
+```
+DATABASE_URL = ${{Postgres.DATABASE_URL}}
+```
+
+Seeding is deliberately **not** part of the deploy — `prisma/seed.ts` truncates both
+tables before inserting, so running it on every deploy would wipe production. Seed once,
+by hand, when you actually want demo data.
+
+### Running against Railway from a workstation
+
+Railway's Postgres is reachable at `postgres.railway.internal`, which only resolves
+inside Railway's network — your laptop cannot connect to it. Rather than exposing the
+database through a public TCP proxy, prefix local commands with `railway run`, which
+injects the service's variables and tunnels the connection:
+
+```bash
+railway login
+railway link                      # pick the project + Postgres service
+railway run pnpm db:migrate
+railway run pnpm db:seed
+railway run pnpm dev
+```
+
+`railway run` overrides `DATABASE_URL` from `.env`, so the value sitting in your local
+`.env` does not matter while you use it.
+
+### If you move to a pooled host
+
+Neon and Supabase hand out a **pooled** host fronted by PgBouncer. That works for the
+app but not for `prisma migrate`, which needs session-level access. In that case add a
+second variable and wire it up:
 
 ```
 DATABASE_URL=...ep-name-pooler.region.aws.neon.tech/neondb?sslmode=require   # app
 DIRECT_URL=...ep-name.region.aws.neon.tech/neondb?sslmode=require            # migrations
 ```
 
-On Neon the direct host is the pooled host with `-pooler` removed. Using a plain local
-Postgres? Set both to the same string.
+```prisma
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+```
+
+On Neon the direct host is the pooled host with `-pooler` removed. Railway needs none of
+this — it has no pooler, so the datasource here carries `url` only.
 
 ### There is no root `loading.tsx`
 

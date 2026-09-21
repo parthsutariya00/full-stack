@@ -37,6 +37,9 @@
     "typescript": "^5"
   },
   "packageManager": "pnpm@10.18.2",
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "@prisma/client",
