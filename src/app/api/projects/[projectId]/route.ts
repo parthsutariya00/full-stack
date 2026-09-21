@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { notFoundResponse, serverError } from "@/lib/http";
+import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { getProjectDetail } from "@/lib/queries";
 import type { ApiError, ProjectDetail } from "@/lib/types";
@@ -45,6 +46,7 @@ export async function DELETE(
 
   try {
     await prisma.project.delete({ where: { id: projectId } });
+    await invalidateProject(projectId);
     return NextResponse.json({ deleted: projectId });
   } catch (caught) {
     return serverError(caught instanceof Error ? caught : null);

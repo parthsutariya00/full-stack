@@ -3,6 +3,7 @@
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import type { FormState } from "@/lib/types";
 import {
@@ -60,6 +61,7 @@ export async function createProjectAction(
     return reportError(caught instanceof Error ? caught : null);
   }
 
+  await invalidateProject(null);
   revalidatePath("/");
   return success(`Project "${parsed.data.name}" created.`);
 }
@@ -88,6 +90,7 @@ export async function updateProjectAction(
     return reportError(caught instanceof Error ? caught : null);
   }
 
+  await invalidateProject(id.data.id);
   revalidatePath("/");
   revalidatePath(`/projects/${id.data.id}`);
   return success("Project updated.");
@@ -101,6 +104,7 @@ export async function deleteProjectAction(formData: FormData): Promise<void> {
   }
 
   await prisma.project.delete({ where: { id: id.data.id } });
+  await invalidateProject(id.data.id);
   revalidatePath("/");
   redirect("/");
 }
@@ -130,6 +134,7 @@ export async function createTaskAction(
     return reportError(caught instanceof Error ? caught : null);
   }
 
+  await invalidateProject(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/");
   return success(`Task "${rest.title}" added.`);
@@ -164,6 +169,7 @@ export async function updateTaskAction(
     return reportError(caught instanceof Error ? caught : null);
   }
 
+  await invalidateProject(projectId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/");
   return success("Task updated.");
@@ -185,6 +191,7 @@ export async function setTaskStatusAction(formData: FormData): Promise<void> {
     select: { projectId: true },
   });
 
+  await invalidateProject(task.projectId);
   revalidatePath(`/projects/${task.projectId}`);
   revalidatePath("/");
 }
@@ -201,6 +208,7 @@ export async function deleteTaskAction(formData: FormData): Promise<void> {
     select: { projectId: true },
   });
 
+  await invalidateProject(task.projectId);
   revalidatePath(`/projects/${task.projectId}`);
   revalidatePath("/");
 }

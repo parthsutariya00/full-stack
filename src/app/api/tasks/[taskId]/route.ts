@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { badRequest, notFoundResponse, readJsonBody, serverError } from "@/lib/http";
+import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { getTask, toTaskDTO } from "@/lib/queries";
 import type { ApiError, TaskDTO } from "@/lib/types";
@@ -63,6 +64,7 @@ export async function PATCH(
 
   try {
     const task = await prisma.task.update({ where: { id: taskId }, data });
+    await invalidateProject(task.projectId);
     return NextResponse.json<TaskDTO>(toTaskDTO(task));
   } catch (caught) {
     return serverError(caught instanceof Error ? caught : null);
@@ -76,7 +78,11 @@ export async function DELETE(
   const { taskId } = await context.params;
 
   try {
-    await prisma.task.delete({ where: { id: taskId } });
+    const task = await prisma.task.delete({
+      where: { id: taskId },
+      select: { projectId: true },
+    });
+    await invalidateProject(task.projectId);
     return NextResponse.json({ deleted: taskId });
   } catch (caught) {
     return serverError(caught instanceof Error ? caught : null);
