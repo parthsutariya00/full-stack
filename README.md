@@ -31,12 +31,19 @@ Deploying: `pnpm db:deploy` runs pending migrations without prompting.
 | Phase | Command | Why |
 | ----- | ------- | --- |
 | Build | `pnpm build` | Runs `prisma generate` then `next build` |
-| Pre-deploy | `pnpm db:deploy` | Applies pending migrations before the new version serves traffic |
-| Start | `pnpm start` | `next start`, binding Railway's `$PORT` |
+| Start | `pnpm db:deploy && pnpm start` | Applies pending migrations, then serves |
 
-The pre-deploy step runs in its own container inside Railway's network, so it reaches
-`postgres.railway.internal` without a public proxy. A failed migration aborts the deploy
-and leaves the previous version running.
+Migrating in the start command rather than a `preDeployCommand` keeps it visible: the
+output lands in the deploy logs you already read, and it runs on every container start.
+`prisma migrate deploy` is idempotent — with nothing pending it prints
+`No pending migrations to apply` and costs about a second.
+
+The container runs inside Railway's network, so it reaches `postgres.railway.internal`
+without a public proxy. If the migration fails the container exits, the deploy is marked
+failed, and the previous version keeps serving.
+
+Running multiple replicas? Move this to a `preDeployCommand` instead, so migrations run
+once per deploy rather than once per replica.
 
 The app service needs one variable, referencing the database service:
 
