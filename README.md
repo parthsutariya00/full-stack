@@ -115,6 +115,43 @@ The pages here resolve fast, so the boundary was dropped to keep status codes ho
 | `pnpm db:studio`  | Prisma Studio                          |
 | `pnpm db:seed`    | Reset and load demo data               |
 
+## Redis cache
+
+Optional. With `REDIS_URL` unset every helper in `src/lib/cache.ts` becomes a
+pass-through and reads go straight to PostgreSQL — local development needs no Redis.
+
+Cached reads:
+
+| Key | TTL | Holds |
+| --- | --- | ----- |
+| `tm:v1:projects:list` | 60s | Dashboard project grid with per-project stats |
+| `tm:v1:stats:workspace` | 60s | Workspace totals tile row |
+| `tm:v1:project:<id>:<status>:<priority>:<sort>:<search>` | 30s | One filter combination of a project page |
+
+Every write — server action or REST route — calls `invalidateProject(projectId)`, which
+drops both workspace keys and `SCAN`s away every filter variant of that project. The TTLs
+are a safety net for invalidations that never arrive, not the primary mechanism.
+
+Three properties worth keeping if you extend this:
+
+- **Cached JSON is parsed, not trusted.** `src/lib/dto-schemas.ts` holds a zod schema per
+  cached shape, each annotated `z.ZodType<TheDTO>` so TypeScript fails the build if a DTO
+  and its schema drift. A stale entry from an older deploy fails `safeParse`, gets deleted,
+  and the request falls through to the database.
+- **Redis failures never surface.** Connection errors, timeouts and malformed entries all
+  fall back to `load()`. A Redis outage makes the app slower, not broken.
+- **Misses are not cached.** `cachedNullable` skips storing `null`, so a project fetched
+  before it exists does not pin a 404 for the whole TTL.
+
+### Adding Redis on Railway
+
+1. Project canvas → **+ New** → **Database** → **Redis**
+2. App service → **Variables** → `REDIS_URL` = `${{Redis.REDIS_URL}}`
+3. Redeploy
+
+Use the `${{...}}` reference rather than a pasted literal — Railway resolves it at deploy
+time and it survives credential rotation.
+
 ## Data model
 
 ```

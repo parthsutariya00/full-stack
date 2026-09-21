@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { badRequest, readJsonBody, serverError } from "@/lib/http";
+import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { listProjects, toProjectDTO } from "@/lib/queries";
 import type { ProjectDTO, ProjectSummary } from "@/lib/types";
@@ -40,6 +41,7 @@ export async function POST(
       },
     });
 
+    await invalidateProject(project.id);
     return NextResponse.json<ProjectDTO>(toProjectDTO(project), { status: 201 });
   } catch (caught) {
     return serverError(caught instanceof Error ? caught : null);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { badRequest, notFoundResponse, readJsonBody, serverError } from "@/lib/http";
+import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { toTaskDTO } from "@/lib/queries";
 import type { ApiError, TaskDTO } from "@/lib/types";
@@ -67,6 +68,7 @@ export async function POST(
       },
     });
 
+    await invalidateProject(projectId);
     return NextResponse.json<TaskDTO>(toTaskDTO(task), { status: 201 });
   } catch (caught) {
     return serverError(caught instanceof Error ? caught : null);

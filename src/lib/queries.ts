@@ -1,5 +1,11 @@
 import { TaskStatus } from "@prisma/client";
 import type { Prisma, Project, Task } from "@prisma/client";
+import { CACHE_TTL, cacheKeys, cached, cachedNullable } from "@/lib/cache";
+import {
+  projectDetailSchema,
+  projectStatsSchema,
+  projectSummaryListSchema,
+} from "@/lib/dto-schemas";
 import { prisma } from "@/lib/prisma";
 import type {
   ProjectDetail,
@@ -66,20 +72,34 @@ function buildStats(tasks: StatusCount[]): ProjectStats {
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
-  const projects = await prisma.project.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { tasks: { select: { status: true, dueDate: true } } },
-  });
+  return cached(
+    cacheKeys.projectList(),
+    CACHE_TTL.projectList,
+    projectSummaryListSchema,
+    async (): Promise<ProjectSummary[]> => {
+      const projects = await prisma.project.findMany({
+        orderBy: { createdAt: "desc" },
+        include: { tasks: { select: { status: true, dueDate: true } } },
+      });
 
-  return projects.map((project) => ({
-    ...toProjectDTO(project),
-    stats: buildStats(project.tasks),
-  }));
+      return projects.map((project) => ({
+        ...toProjectDTO(project),
+        stats: buildStats(project.tasks),
+      }));
+    },
+  );
 }
 
 export async function countWorkspaceTotals(): Promise<ProjectStats> {
-  const tasks = await prisma.task.findMany({ select: { status: true, dueDate: true } });
-  return buildStats(tasks);
+  return cached(
+    cacheKeys.workspaceStats(),
+    CACHE_TTL.workspaceStats,
+    projectStatsSchema,
+    async (): Promise<ProjectStats> => {
+      const tasks = await prisma.task.findMany({ select: { status: true, dueDate: true } });
+      return buildStats(tasks);
+    },
+  );
 }
 
 function buildTaskWhere(projectId: string, filters: TaskFilters): Prisma.TaskWhereInput {
@@ -116,7 +136,7 @@ function buildTaskOrder(filters: TaskFilters): Prisma.TaskOrderByWithRelationInp
   }
 }
 
-export async function getProjectDetail(
+async function loadProjectDetail(
   projectId: string,
   filters: TaskFilters,
 ): Promise<ProjectDetail | null> {
@@ -142,6 +162,18 @@ export async function getProjectDetail(
     stats: buildStats(allTaskStates),
     tasks: tasks.map(toTaskDTO),
   };
+}
+
+export async function getProjectDetail(
+  projectId: string,
+  filters: TaskFilters,
+): Promise<ProjectDetail | null> {
+  return cachedNullable(
+    cacheKeys.projectDetail(projectId, filters),
+    CACHE_TTL.projectDetail,
+    projectDetailSchema,
+    (): Promise<ProjectDetail | null> => loadProjectDetail(projectId, filters),
+  );
 }
 
 export async function getTask(taskId: string): Promise<TaskDTO | null> {
