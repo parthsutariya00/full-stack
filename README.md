@@ -24,7 +24,31 @@ pnpm dev                      # http://localhost:3000
 
 Deploying: `pnpm db:deploy` runs pending migrations without prompting.
 
-### Running against Railway
+### Deploying to Railway
+
+`railway.json` drives the deploy, so nothing needs configuring in the dashboard:
+
+| Phase | Command | Why |
+| ----- | ------- | --- |
+| Build | `pnpm build` | Runs `prisma generate` then `next build` |
+| Pre-deploy | `pnpm db:deploy` | Applies pending migrations before the new version serves traffic |
+| Start | `pnpm start` | `next start`, binding Railway's `$PORT` |
+
+The pre-deploy step runs in its own container inside Railway's network, so it reaches
+`postgres.railway.internal` without a public proxy. A failed migration aborts the deploy
+and leaves the previous version running.
+
+The app service needs one variable, referencing the database service:
+
+```
+DATABASE_URL = ${{Postgres.DATABASE_URL}}
+```
+
+Seeding is deliberately **not** part of the deploy — `prisma/seed.ts` truncates both
+tables before inserting, so running it on every deploy would wipe production. Seed once,
+by hand, when you actually want demo data.
+
+### Running against Railway from a workstation
 
 Railway's Postgres is reachable at `postgres.railway.internal`, which only resolves
 inside Railway's network — your laptop cannot connect to it. Rather than exposing the
