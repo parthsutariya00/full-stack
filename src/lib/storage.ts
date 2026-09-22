@@ -17,6 +17,7 @@ import { EXTENSION_BY_TYPE, safeFilename } from "@/lib/uploads";
  */
 
 const GET_URL_TTL_SECONDS = 300;
+const PUT_URL_TTL_SECONDS = 300;
 
 export type StorageClient = {
   signer: AwsClient;
@@ -74,17 +75,55 @@ export function buildObjectKey(taskId: string, filename: string, contentType: st
   return `tasks/${taskId}/${random}-${name}`;
 }
 
-/** Sends the bytes to the bucket. Throws with the bucket's own message on failure. */
+/** Query-signed URL for one object. Only `host` is signed, so other headers stay free. */
+async function presign(
+  client: StorageClient,
+  key: string,
+  method: "PUT" | "GET",
+  ttlSeconds: number,
+  extraQuery: Record<string, string> = {},
+): Promise<string> {
+  const url = new URL(objectUrl(client.config, key));
+  url.searchParams.set("X-Amz-Expires", String(ttlSeconds));
+
+  for (const [name, value] of Object.entries(extraQuery)) {
+    url.searchParams.set(name, value);
+  }
+
+  const signed = await client.signer.sign(url.toString(), {
+    method,
+    aws: { signQuery: true },
+  });
+
+  return signed.url;
+}
+
+/**
+ * Sends the bytes to the bucket. Throws with the bucket's own message on failure.
+ *
+ * The URL is query-signed and then handed to plain `fetch` with the buffer,
+ * rather than going through `signer.fetch`. Next.js patches global `fetch`, and
+ * its patch rebuilds a `Request` input from `request.body` — a ReadableStream,
+ * whose length is unknown, so the request goes out chunked and the bucket
+ * answers `411 MissingContentLength`. Passing the buffer through `init` keeps
+ * the length, and therefore the `Content-Length` header.
+ */
 export async function putObject(
   client: StorageClient,
   key: string,
   body: ArrayBuffer,
   contentType: string,
 ): Promise<void> {
-  const response = await client.signer.fetch(objectUrl(client.config, key), {
+  const signedUrl = await presign(client, key, "PUT", PUT_URL_TTL_SECONDS);
+
+  const response = await fetch(signedUrl, {
     method: "PUT",
     body,
-    headers: { "content-type": contentType },
+    headers: {
+      "content-type": contentType,
+      "content-length": String(body.byteLength),
+    },
+    cache: "no-store",
   });
 
   if (!response.ok) {
@@ -94,27 +133,19 @@ export async function putObject(
 }
 
 /** Short-lived read URL. `downloadAs` turns the response into a file download. */
-export async function presignDownload(
+export function presignDownload(
   client: StorageClient,
   key: string,
   downloadAs?: string,
 ): Promise<string> {
-  const url = new URL(objectUrl(client.config, key));
-  url.searchParams.set("X-Amz-Expires", String(GET_URL_TTL_SECONDS));
+  const query: Record<string, string> = {};
 
   if (downloadAs !== undefined) {
-    url.searchParams.set(
-      "response-content-disposition",
-      `attachment; filename="${safeFilename(downloadAs)}"`,
-    );
+    query["response-content-disposition"] =
+      `attachment; filename="${safeFilename(downloadAs)}"`;
   }
 
-  const signed = await client.signer.sign(url.toString(), {
-    method: "GET",
-    aws: { signQuery: true },
-  });
-
-  return signed.url;
+  return presign(client, key, "GET", GET_URL_TTL_SECONDS, query);
 }
 
 /** Best-effort delete; a failure here leaves an orphan object, never a broken page. */
