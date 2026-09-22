@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Neon's pooled host cannot hold the advisory lock `prisma migrate` takes.
+  // DIRECT_URL is the same connection string with `-pooler` removed.
+  directUrl = env("DIRECT_URL")
 }
 
 enum TaskStatus {
@@ -47,6 +50,24 @@ model Task {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  attachments TaskAttachment[]
+
   @@index([projectId, status])
   @@index([dueDate])
+}
+
+/// One image stored in Cloudflare R2. The row is the index; `key` is the only
+/// pointer into the bucket, and the bytes never pass through this app.
+model TaskAttachment {
+  id          String   @id @default(cuid())
+  key         String   @unique @db.VarChar(400)
+  filename    String   @db.VarChar(200)
+  contentType String   @db.VarChar(100)
+  size        Int
+  createdAt   DateTime @default(now())
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
 }

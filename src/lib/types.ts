@@ -31,6 +31,15 @@ export type ProjectSummary = ProjectDTO & {
   stats: ProjectStats;
 };
 
+/** One image held in R2. `id` is all a client needs — the bucket key stays server-side. */
+export type AttachmentDTO = {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+};
+
 /** Serialisable task shape handed to client components. */
 export type TaskDTO = {
   id: string;
@@ -43,7 +52,9 @@ export type TaskDTO = {
   dueDate: string | null;
   createdAt: string;
   updatedAt: string;
+  attachments: AttachmentDTO[];
 };
+
 
 export type ProjectDetail = ProjectDTO & {
   stats: ProjectStats;

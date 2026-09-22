@@ -3,7 +3,7 @@ import { getRedis } from "@/lib/redis";
 import type { JsonValue, TaskFilters } from "@/lib/types";
 
 /** Bump when a cached shape changes, so old entries are ignored rather than parsed. */
-const NAMESPACE = "tm:v1";
+const NAMESPACE = "tm:v2";
 
 export const CACHE_TTL = {
   projectList: 60,

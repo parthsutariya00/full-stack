@@ -1,5 +1,5 @@
 import { TaskStatus } from "@prisma/client";
-import type { Prisma, Project, Task } from "@prisma/client";
+import type { Prisma, Project, Task, TaskAttachment } from "@prisma/client";
 import { CACHE_TTL, cacheKeys, cached, cachedNullable } from "@/lib/cache";
 import {
   projectDetailSchema,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/dto-schemas";
 import { prisma } from "@/lib/prisma";
 import type {
+  AttachmentDTO,
   ProjectDetail,
   ProjectDTO,
   ProjectStats,
@@ -17,6 +18,24 @@ import type {
 } from "@/lib/types";
 
 type StatusCount = { status: TaskStatus; dueDate: Date | null };
+
+/** A task plus its images, as every task read in this app loads it. */
+export type TaskWithAttachments = Task & { attachments: TaskAttachment[] };
+
+/** Every task query orders images oldest-first so the gallery is stable. */
+export const attachmentInclude = {
+  attachments: { orderBy: { createdAt: "asc" } },
+} as const satisfies Prisma.TaskInclude;
+
+export function toAttachmentDTO(attachment: TaskAttachment): AttachmentDTO {
+  return {
+    id: attachment.id,
+    filename: attachment.filename,
+    contentType: attachment.contentType,
+    size: attachment.size,
+    createdAt: attachment.createdAt.toISOString(),
+  };
+}
 
 export function toProjectDTO(project: Project): ProjectDTO {
   return {
@@ -29,7 +48,7 @@ export function toProjectDTO(project: Project): ProjectDTO {
   };
 }
 
-export function toTaskDTO(task: Task): TaskDTO {
+export function toTaskDTO(task: TaskWithAttachments): TaskDTO {
   return {
     id: task.id,
     projectId: task.projectId,
@@ -40,6 +59,7 @@ export function toTaskDTO(task: Task): TaskDTO {
     dueDate: task.dueDate === null ? null : task.dueDate.toISOString().slice(0, 10),
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
+    attachments: task.attachments.map(toAttachmentDTO),
   };
 }
 
@@ -150,6 +170,7 @@ async function loadProjectDetail(
     prisma.task.findMany({
       where: buildTaskWhere(projectId, filters),
       orderBy: buildTaskOrder(filters),
+      include: attachmentInclude,
     }),
     prisma.task.findMany({
       where: { projectId },
@@ -177,7 +198,10 @@ export async function getProjectDetail(
 }
 
 export async function getTask(taskId: string): Promise<TaskDTO | null> {
-  const task = await prisma.task.findUnique({ where: { id: taskId } });
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: attachmentInclude,
+  });
   return task === null ? null : toTaskDTO(task);
 }
 

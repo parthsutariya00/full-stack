@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { TaskAttachments } from "@/components/TaskAttachments";
 import { TaskForm } from "@/components/TaskForm";
 import { formatDate } from "@/lib/labels";
 import { getTask } from "@/lib/queries";
+import { isStorageConfigured } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,11 @@ export default async function EditTaskPage({ params }: EditTaskPageProps) {
         ← Back to project
       </Link>
       <TaskForm projectId={projectId} task={task} />
+      <TaskAttachments
+        taskId={task.id}
+        attachments={task.attachments}
+        storageReady={isStorageConfigured()}
+      />
       <p className="text-xs text-slate-600">
         Created {formatDate(task.createdAt)} · last updated {formatDate(task.updatedAt)}
       </p>

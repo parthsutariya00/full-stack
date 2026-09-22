@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
+import { deleteObjects } from "@/lib/storage";
 import type { FormState } from "@/lib/types";
 import {
   idSchema,
@@ -103,7 +104,14 @@ export async function deleteProjectAction(formData: FormData): Promise<void> {
     return;
   }
 
+  // Cascade clears the rows; the bucket objects have to be removed by hand.
+  const orphans = await prisma.taskAttachment.findMany({
+    where: { task: { projectId: id.data.id } },
+    select: { key: true },
+  });
+
   await prisma.project.delete({ where: { id: id.data.id } });
+  await deleteObjects(orphans.map((attachment) => attachment.key));
   await invalidateProject(id.data.id);
   revalidatePath("/");
   redirect("/");
@@ -203,11 +211,17 @@ export async function deleteTaskAction(formData: FormData): Promise<void> {
     return;
   }
 
+  const orphans = await prisma.taskAttachment.findMany({
+    where: { taskId: id.data.id },
+    select: { key: true },
+  });
+
   const task = await prisma.task.delete({
     where: { id: id.data.id },
     select: { projectId: true },
   });
 
+  await deleteObjects(orphans.map((attachment) => attachment.key));
   await invalidateProject(task.projectId);
   revalidatePath(`/projects/${task.projectId}`);
   revalidatePath("/");
