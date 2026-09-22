@@ -152,19 +152,76 @@ Three properties worth keeping if you extend this:
 Use the `${{...}}` reference rather than a pasted literal — Railway resolves it at deploy
 time and it survives credential rotation.
 
+## Image uploads (Railway Storage Bucket)
+
+Tasks hold images, stored in a Railway bucket over its S3-compatible API.
+
+```
+browser ──1. POST multipart /api/tasks/[taskId]/attachments──> app
+app     ──2. signed PUT──────────────────────────────────────> bucket
+app     ──3. write TaskAttachment row, return the DTO────────> browser
+browser ──4. GET /api/attachments/[id] ──> 302 ──> presigned GET (5 min)
+```
+
+The upload is **proxied through the app** rather than sent straight from the browser.
+Railway buckets have no documented CORS control, and a browser PUT to the bucket needs
+one; going through the app sidesteps that entirely. It is a route handler, not a server
+action, because server actions cap the request body at 1 MB.
+
+Reads go through `/api/attachments/[id]`, which redirects to a five-minute signed URL —
+Railway buckets are private and have no public URLs, and a link that leaks expires on its
+own. `?download=1` returns it as a file download.
+
+Limits live in `src/lib/uploads.ts` (8 MB, PNG/JPEG/WebP/GIF/AVIF) and are enforced on
+both sides — the client for fast feedback, the route handler because a client can lie.
+
+There is no auth in this app yet, so anyone who can reach it can attach an image to any
+task and read any attachment id. Add the session check in the two routes under
+`src/app/api/` and in `src/lib/attachment-actions.ts` once there is one.
+
+### Setup on Railway
+
+1. Project canvas → **+ New** → **Bucket**.
+2. App service → **Variables** → add the bucket's variable references:
+   `ENDPOINT`, `BUCKET`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, `REGION`
+   (e.g. `ENDPOINT = ${{Bucket.ENDPOINT}}`). The app reads those bare names directly.
+3. Redeploy.
+
+### Setup locally
+
+Copy the values from the bucket's **Credentials** tab into `.env`:
+
+```bash
+STORAGE_ENDPOINT="https://t3.storageapi.dev"
+STORAGE_BUCKET="your-bucket-name"
+STORAGE_ACCESS_KEY_ID="..."
+STORAGE_SECRET_ACCESS_KEY="..."
+STORAGE_REGION="auto"
+```
+
+Leave them unset and the app runs as before with the upload panel disabled. If the
+Credentials tab says the bucket needs **path-style** URLs, add
+`STORAGE_FORCE_PATH_STYLE="true"`. The same variables point at any other S3-compatible
+bucket (MinIO, Garage, R2, S3) — only the endpoint changes.
+
+Deleting an image, a task or a project removes the objects from the bucket too
+(best-effort — a failed delete leaves an orphan object, never a broken row).
+
 ## Data model
 
 ```
-Project 1 ──< Task
+Project 1 ──< Task 1 ──< TaskAttachment
   id, name, description, color, createdAt, updatedAt
              id, title, description, status, priority, dueDate, projectId
+                        id, key, filename, contentType, size, taskId, createdAt
 ```
 
 `TaskStatus` = `TODO | IN_PROGRESS | BLOCKED | DONE`
 `TaskPriority` = `LOW | MEDIUM | HIGH | URGENT`
 
-Indexes: `Project(createdAt)`, `Task(projectId, status)`, `Task(dueDate)`.
-Deleting a project cascades to its tasks.
+Indexes: `Project(createdAt)`, `Task(projectId, status)`, `Task(dueDate)`,
+`TaskAttachment(taskId, createdAt)`, unique on `TaskAttachment(key)`.
+Deleting a project cascades to its tasks, and a task to its attachment rows.
 
 ## Routes
 
@@ -190,6 +247,8 @@ Deleting a project cascades to its tasks.
 | GET    | `/api/tasks/[taskId]`               | —                                                |
 | PATCH  | `/api/tasks/[taskId]`               | any subset of the task fields                    |
 | DELETE | `/api/tasks/[taskId]`               | —                                                |
+| POST   | `/api/tasks/[taskId]/attachments`   | multipart, field `file` — one image              |
+| GET    | `/api/attachments/[attachmentId]`   | `?download=1` optional — 302 to a signed URL     |
 
 ```bash
 curl -X POST localhost:3000/api/projects \

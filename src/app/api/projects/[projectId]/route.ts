@@ -3,6 +3,7 @@ import { notFoundResponse, serverError } from "@/lib/http";
 import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { getProjectDetail } from "@/lib/queries";
+import { deleteObjects } from "@/lib/storage";
 import type { ApiError, ProjectDetail } from "@/lib/types";
 import { parseTaskFilters } from "@/lib/validation";
 
@@ -45,7 +46,14 @@ export async function DELETE(
   const { projectId } = await context.params;
 
   try {
+    // Cascade clears the rows; the bucket objects have to be removed by hand.
+    const orphans = await prisma.taskAttachment.findMany({
+      where: { task: { projectId } },
+      select: { key: true },
+    });
+
     await prisma.project.delete({ where: { id: projectId } });
+    await deleteObjects(orphans.map((attachment) => attachment.key));
     await invalidateProject(projectId);
     return NextResponse.json({ deleted: projectId });
   } catch (caught) {

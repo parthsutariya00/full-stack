@@ -54,6 +54,31 @@ export function TaskCard({ task }: TaskCardProps) {
         <p className="text-sm leading-relaxed text-slate-400">{task.description}</p>
       )}
 
+      {task.attachments.length === 0 ? null : (
+        <div className="flex items-center gap-2">
+          {task.attachments.slice(0, 3).map((attachment) => (
+            <a
+              key={attachment.id}
+              href={`/api/attachments/${attachment.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="overflow-hidden rounded-md border border-edge"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- signed redirect, not an optimisable static asset */}
+              <img
+                src={`/api/attachments/${attachment.id}`}
+                alt={attachment.filename}
+                loading="lazy"
+                className="h-12 w-12 object-cover"
+              />
+            </a>
+          ))}
+          {task.attachments.length > 3 ? (
+            <span className="text-xs text-slate-500">+{task.attachments.length - 3}</span>
+          ) : null}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <span className={`chip ${STATUS_CLASS[task.status]}`}>{STATUS_LABEL[task.status]}</span>
         {task.dueDate === null ? (

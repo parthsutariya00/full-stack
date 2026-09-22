@@ -28,6 +28,14 @@ const projectFields = {
   updatedAt: z.string(),
 };
 
+const attachmentSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  contentType: z.string(),
+  size: z.number().int(),
+  createdAt: z.string(),
+});
+
 const taskSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -38,6 +46,7 @@ const taskSchema = z.object({
   dueDate: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  attachments: z.array(attachmentSchema),
 });
 
 export const projectSummaryListSchema: z.ZodType<ProjectSummary[]> = z.array(

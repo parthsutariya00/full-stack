@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { badRequest, notFoundResponse, readJsonBody, serverError } from "@/lib/http";
 import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
-import { toTaskDTO } from "@/lib/queries";
+import { attachmentInclude, toTaskDTO } from "@/lib/queries";
 import type { ApiError, TaskDTO } from "@/lib/types";
 import { taskCreateApiSchema, toFieldErrors } from "@/lib/validation";
 
@@ -22,6 +22,7 @@ export async function GET(
     const tasks = await prisma.task.findMany({
       where: { projectId },
       orderBy: { createdAt: "desc" },
+      include: attachmentInclude,
     });
 
     return NextResponse.json<TaskDTO[]>(tasks.map(toTaskDTO));
@@ -66,6 +67,7 @@ export async function POST(
         priority: parsed.data.priority ?? "MEDIUM",
         dueDate: parsed.data.dueDate ?? null,
       },
+      include: attachmentInclude,
     });
 
     await invalidateProject(projectId);

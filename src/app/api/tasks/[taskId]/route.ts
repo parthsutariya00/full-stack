@@ -3,7 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { badRequest, notFoundResponse, readJsonBody, serverError } from "@/lib/http";
 import { invalidateProject } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
-import { getTask, toTaskDTO } from "@/lib/queries";
+import { attachmentInclude, getTask, toTaskDTO } from "@/lib/queries";
+import { deleteObjects } from "@/lib/storage";
 import type { ApiError, TaskDTO } from "@/lib/types";
 import { taskPatchApiSchema, toFieldErrors } from "@/lib/validation";
 
@@ -63,7 +64,11 @@ export async function PATCH(
   }
 
   try {
-    const task = await prisma.task.update({ where: { id: taskId }, data });
+    const task = await prisma.task.update({
+      where: { id: taskId },
+      data,
+      include: attachmentInclude,
+    });
     await invalidateProject(task.projectId);
     return NextResponse.json<TaskDTO>(toTaskDTO(task));
   } catch (caught) {
@@ -78,10 +83,18 @@ export async function DELETE(
   const { taskId } = await context.params;
 
   try {
+    // Cascade clears the rows; the bucket objects have to be removed by hand.
+    const orphans = await prisma.taskAttachment.findMany({
+      where: { taskId },
+      select: { key: true },
+    });
+
     const task = await prisma.task.delete({
       where: { id: taskId },
       select: { projectId: true },
     });
+
+    await deleteObjects(orphans.map((attachment) => attachment.key));
     await invalidateProject(task.projectId);
     return NextResponse.json({ deleted: taskId });
   } catch (caught) {
